@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://razorrecover-ai-qqsb.onrender.com";
+
 function App() {
   const [attempts, setAttempts] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -10,10 +14,6 @@ function App() {
 
   const [error, setError] = useState("");
   const [retryingId, setRetryingId] = useState(null);
-
-  // =========================================
-  // NEW PAYMENT STATES
-  // =========================================
 
   const [paymentAmount, setPaymentAmount] = useState(500);
   const [creatingPayment, setCreatingPayment] = useState(false);
@@ -28,20 +28,28 @@ function App() {
       setError("");
 
       const response = await fetch(
-        "http://localhost:5000/api/recovery"
+        `${API_URL}/api/recovery`
       );
+
+      if (!response.ok) {
+        throw new Error(
+          `Recovery API error: ${response.status}`
+        );
+      }
 
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.message);
+        throw new Error(
+          data.message || "Failed to fetch recovery attempts"
+        );
       }
 
-      setAttempts(data.attempts);
+      setAttempts(data.attempts || []);
 
     } catch (err) {
       console.error(
-        "Error fetching recovery attempts:",
+        "❌ Error fetching recovery attempts:",
         err
       );
 
@@ -61,22 +69,32 @@ function App() {
       setAnalyticsLoading(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/analytics"
+        `${API_URL}/api/analytics`
       );
+
+      if (!response.ok) {
+        throw new Error(
+          `Analytics API error: ${response.status}`
+        );
+      }
 
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.message);
+        throw new Error(
+          data.message || "Failed to fetch analytics"
+        );
       }
 
       setAnalytics(data.analytics);
 
     } catch (err) {
       console.error(
-        "Error fetching analytics:",
+        "❌ Error fetching analytics:",
         err
       );
+
+      setAnalytics(null);
 
     } finally {
       setAnalyticsLoading(false);
@@ -102,28 +120,18 @@ function App() {
     try {
       setCreatingPayment(true);
 
-      // -----------------------------------------
-      // VALIDATE AMOUNT
-      // -----------------------------------------
-
       if (
         !paymentAmount ||
         Number(paymentAmount) <= 0
       ) {
-        alert("Please enter a valid amount.");
+        alert("Please enter a valid payment amount.");
         return;
       }
 
-      console.log(
-        "💳 Creating new payment..."
-      );
-
-      // -----------------------------------------
-      // CREATE RAZORPAY ORDER
-      // -----------------------------------------
+      console.log("💳 Creating new payment...");
 
       const response = await fetch(
-        "http://localhost:5000/api/razorpay/create-order",
+        `${API_URL}/api/razorpay/create-order`,
         {
           method: "POST",
 
@@ -138,20 +146,28 @@ function App() {
         }
       );
 
+      if (!response.ok) {
+        throw new Error(
+          `Payment API error: ${response.status}`
+        );
+      }
+
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.message);
+        throw new Error(
+          data.message || "Unable to create payment"
+        );
       }
 
       console.log(
-        "✅ New Razorpay order created:",
+        "✅ Razorpay order created:",
         data.order.id
       );
 
-      // -----------------------------------------
+      // =========================================
       // CHECK RAZORPAY SCRIPT
-      // -----------------------------------------
+      // =========================================
 
       if (!window.Razorpay) {
         throw new Error(
@@ -159,9 +175,9 @@ function App() {
         );
       }
 
-      // -----------------------------------------
-      // RAZORPAY CHECKOUT OPTIONS
-      // -----------------------------------------
+      // =========================================
+      // RAZORPAY OPTIONS
+      // =========================================
 
       const options = {
         key: data.key,
@@ -176,28 +192,14 @@ function App() {
 
         order_id: data.order.id,
 
-        // ---------------------------------------
-        // PAYMENT SUCCESS
-        // ---------------------------------------
-
         handler: function (response) {
           console.log(
-            "✅ New payment successful!"
+            "✅ Payment successful!"
           );
 
           console.log(
             "Payment ID:",
             response.razorpay_payment_id
-          );
-
-          console.log(
-            "Order ID:",
-            response.razorpay_order_id
-          );
-
-          console.log(
-            "Signature:",
-            response.razorpay_signature
           );
 
           alert(
@@ -206,17 +208,10 @@ function App() {
             response.razorpay_payment_id
           );
 
-          // Give Razorpay webhook time
-          // to update MongoDB
-
           setTimeout(() => {
             refreshDashboard();
-          }, 1500);
+          }, 2000);
         },
-
-        // ---------------------------------------
-        // CHECKOUT CLOSED
-        // ---------------------------------------
 
         modal: {
           ondismiss: function () {
@@ -226,31 +221,27 @@ function App() {
           }
         },
 
-        // ---------------------------------------
-        // THEME
-        // ---------------------------------------
-
         theme: {
           color: "#3399cc"
         }
       };
 
-      // -----------------------------------------
-      // CREATE RAZORPAY INSTANCE
-      // -----------------------------------------
+      // =========================================
+      // OPEN RAZORPAY CHECKOUT
+      // =========================================
 
       const razorpay =
         new window.Razorpay(options);
 
-      // -----------------------------------------
-      // PAYMENT FAILURE
-      // -----------------------------------------
+      // =========================================
+      // PAYMENT FAILED
+      // =========================================
 
       razorpay.on(
         "payment.failed",
         function (response) {
           console.error(
-            "❌ New payment failed:",
+            "❌ Payment failed:",
             response.error
           );
 
@@ -259,30 +250,23 @@ function App() {
             response.error.description
           );
 
-          // Refresh dashboard after failure
-          // because webhook may create AI recovery
-
           setTimeout(() => {
             refreshDashboard();
-          }, 1500);
+          }, 2000);
         }
       );
 
-      // -----------------------------------------
-      // OPEN CHECKOUT
-      // -----------------------------------------
-
       razorpay.open();
 
-    } catch (error) {
+    } catch (err) {
       console.error(
         "❌ New payment error:",
-        error
+        err
       );
 
       alert(
         "Unable to create payment:\n\n" +
-        error.message
+        err.message
       );
 
     } finally {
@@ -302,21 +286,25 @@ function App() {
         "🔄 Creating retry payment..."
       );
 
-      // -----------------------------------------
-      // CALL BACKEND
-      // -----------------------------------------
-
       const response = await fetch(
-        `http://localhost:5000/api/recovery/${attemptId}/retry`,
+        `${API_URL}/api/recovery/${attemptId}/retry`,
         {
           method: "POST"
         }
       );
 
+      if (!response.ok) {
+        throw new Error(
+          `Retry API error: ${response.status}`
+        );
+      }
+
       const data = await response.json();
 
       if (!data.success) {
-        throw new Error(data.message);
+        throw new Error(
+          data.message || "Unable to create retry payment"
+        );
       }
 
       console.log(
@@ -324,9 +312,9 @@ function App() {
         data.order.id
       );
 
-      // -----------------------------------------
-      // CHECK RAZORPAY SCRIPT
-      // -----------------------------------------
+      // =========================================
+      // CHECK RAZORPAY
+      // =========================================
 
       if (!window.Razorpay) {
         throw new Error(
@@ -334,9 +322,9 @@ function App() {
         );
       }
 
-      // -----------------------------------------
+      // =========================================
       // RAZORPAY OPTIONS
-      // -----------------------------------------
+      // =========================================
 
       const options = {
         key: data.key,
@@ -351,10 +339,6 @@ function App() {
 
         order_id: data.order.id,
 
-        // ---------------------------------------
-        // PAYMENT SUCCESS
-        // ---------------------------------------
-
         handler: function (response) {
           console.log(
             "✅ Retry payment successful!"
@@ -365,33 +349,16 @@ function App() {
             response.razorpay_payment_id
           );
 
-          console.log(
-            "Order ID:",
-            response.razorpay_order_id
-          );
-
-          console.log(
-            "Signature:",
-            response.razorpay_signature
-          );
-
           alert(
-            "Payment successful!\n\n" +
+            "Payment successfully recovered!\n\n" +
             "Payment ID: " +
             response.razorpay_payment_id
           );
 
-          // Give webhook time
-          // to update MongoDB
-
           setTimeout(() => {
             refreshDashboard();
-          }, 1500);
+          }, 2000);
         },
-
-        // ---------------------------------------
-        // CHECKOUT CLOSED
-        // ---------------------------------------
 
         modal: {
           ondismiss: function () {
@@ -403,25 +370,17 @@ function App() {
           }
         },
 
-        // ---------------------------------------
-        // THEME
-        // ---------------------------------------
-
         theme: {
           color: "#3399cc"
         }
       };
 
-      // -----------------------------------------
-      // CREATE RAZORPAY INSTANCE
-      // -----------------------------------------
-
       const razorpay =
         new window.Razorpay(options);
 
-      // -----------------------------------------
-      // PAYMENT FAILURE
-      // -----------------------------------------
+      // =========================================
+      // RETRY PAYMENT FAILED
+      // =========================================
 
       razorpay.on(
         "payment.failed",
@@ -438,13 +397,9 @@ function App() {
 
           setTimeout(() => {
             refreshDashboard();
-          }, 1000);
+          }, 1500);
         }
       );
-
-      // -----------------------------------------
-      // OPEN CHECKOUT
-      // -----------------------------------------
 
       razorpay.open();
 
@@ -499,8 +454,7 @@ function App() {
           className="refresh-button"
           onClick={refreshDashboard}
           disabled={
-            loading ||
-            analyticsLoading
+            loading || analyticsLoading
           }
         >
           {loading || analyticsLoading
@@ -522,7 +476,7 @@ function App() {
                     MAKE NEW PAYMENT
             ===================================== */}
 
-        <section className="new-payment-section">
+        <section className="payment-section">
 
           <div className="dashboard-title">
 
@@ -532,41 +486,30 @@ function App() {
 
           </div>
 
+          <div className="payment-box">
 
-          <div className="new-payment-card">
+            <label>
+              Payment Amount (₹)
+            </label>
 
-            <div className="payment-input-group">
-
-              <label htmlFor="paymentAmount">
-                Payment Amount (₹)
-              </label>
-
-              <input
-                id="paymentAmount"
-                type="number"
-                min="1"
-                value={paymentAmount}
-                onChange={(e) =>
-                  setPaymentAmount(
-                    e.target.value
-                  )
-                }
-                placeholder="Enter amount"
-              />
-
-            </div>
-
+            <input
+              type="number"
+              min="1"
+              value={paymentAmount}
+              onChange={(e) =>
+                setPaymentAmount(e.target.value)
+              }
+              placeholder="Enter amount"
+            />
 
             <button
               className="pay-button"
               onClick={makeNewPayment}
               disabled={creatingPayment}
             >
-
               {creatingPayment
                 ? "Creating Payment..."
-                : "💳 Pay with Razorpay"}
-
+                : "💳 Make Payment"}
             </button>
 
           </div>
@@ -588,7 +531,6 @@ function App() {
 
           </div>
 
-
           {analyticsLoading ? (
 
             <div className="message-box">
@@ -599,7 +541,6 @@ function App() {
 
             <div className="analytics-grid">
 
-
               {/* TOTAL FAILED */}
 
               <div className="analytics-card">
@@ -609,7 +550,7 @@ function App() {
                 </span>
 
                 <strong className="analytics-value">
-                  {analytics.totalFailedPayments}
+                  {analytics.totalFailedPayments ?? 0}
                 </strong>
 
               </div>
@@ -624,7 +565,7 @@ function App() {
                 </span>
 
                 <strong className="analytics-value">
-                  {analytics.totalRecoveryAttempts}
+                  {analytics.totalRecoveryAttempts ?? 0}
                 </strong>
 
               </div>
@@ -639,7 +580,7 @@ function App() {
                 </span>
 
                 <strong className="analytics-value">
-                  {analytics.successfulRecoveries}
+                  {analytics.successfulRecoveries ?? 0}
                 </strong>
 
               </div>
@@ -654,7 +595,37 @@ function App() {
                 </span>
 
                 <strong className="analytics-value">
-                  {analytics.pendingRecoveries}
+                  {analytics.pendingRecoveries ?? 0}
+                </strong>
+
+              </div>
+
+
+              {/* SENT */}
+
+              <div className="analytics-card">
+
+                <span className="analytics-label">
+                  Sent Recoveries
+                </span>
+
+                <strong className="analytics-value">
+                  {analytics.sentRecoveries ?? 0}
+                </strong>
+
+              </div>
+
+
+              {/* FAILED RECOVERIES */}
+
+              <div className="analytics-card">
+
+                <span className="analytics-label">
+                  Failed Recoveries
+                </span>
+
+                <strong className="analytics-value">
+                  {analytics.failedRecoveries ?? 0}
                 </strong>
 
               </div>
@@ -669,7 +640,7 @@ function App() {
                 </span>
 
                 <strong className="analytics-value">
-                  {analytics.recoveryRate}%
+                  {analytics.recoveryRate ?? 0}%
                 </strong>
 
               </div>
@@ -699,7 +670,9 @@ function App() {
           ) : (
 
             <div className="message-box">
+
               Analytics unavailable.
+
             </div>
 
           )}
@@ -736,7 +709,9 @@ function App() {
           {loading && (
 
             <div className="message-box">
+
               Loading recovery attempts...
+
             </div>
 
           )}
@@ -747,7 +722,9 @@ function App() {
           {!loading && error && (
 
             <div className="error-box">
+
               ❌ {error}
+
             </div>
 
           )}
@@ -760,7 +737,9 @@ function App() {
             attempts.length === 0 && (
 
               <div className="message-box">
+
                 No failed payments found.
+
               </div>
 
             )}
@@ -854,7 +833,8 @@ function App() {
                           Reason:
                         </strong>{" "}
 
-                        {attempt.reason}
+                        {attempt.reason ||
+                          "Payment could not be completed."}
 
                       </p>
 
@@ -887,7 +867,8 @@ function App() {
 
                           <strong>
 
-                            {attempt.priority?.toUpperCase() ||
+                            {attempt.priority
+                              ?.toUpperCase() ||
                               "MEDIUM"}
 
                           </strong>
@@ -906,7 +887,8 @@ function App() {
                         </strong>
 
                         <p>
-                          {attempt.recommendation}
+                          {attempt.recommendation ||
+                            "Please retry the payment or use another payment method."}
                         </p>
 
                       </div>
